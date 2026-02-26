@@ -1,0 +1,7 @@
+#ignoring temporary files
+*.asv 
+*.log 
+*~ 
+#ignoring data folders
+/data/
+/docs/
