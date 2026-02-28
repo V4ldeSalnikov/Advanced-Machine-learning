@@ -1,7 +1,7 @@
 #
 from train import *
 from priors import *
-from vae import *
+from vae_KL import *
 #
 import torch
 import torch.nn as nn
@@ -67,7 +67,7 @@ decoder_net = nn.Sequential(
 # Define VAE model
 decoder = BernoulliDecoder(decoder_net)
 encoder = GaussianEncoder(encoder_net)
-model = VAE(prior, decoder, encoder).to(device)
+model = VAE_KL(prior, decoder, encoder).to(device)
 
 # Choose mode to run
 if args.mode == 'train':

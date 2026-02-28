@@ -61,7 +61,7 @@ class BernoulliDecoder(nn.Module):
         return td.Independent(td.Bernoulli(logits=logits), 2)
 
 
-class VAE(nn.Module):
+class VAE_KL(nn.Module):
     """
     Define a Variational Autoencoder (VAE) model.
     """
@@ -76,7 +76,7 @@ class VAE(nn.Module):
                 The encoder distribution over the latent space.
         """
             
-        super(VAE, self).__init__()
+        super(VAE_KL, self).__init__()
         self.prior = prior
         self.decoder = decoder
         self.encoder = encoder
