@@ -164,7 +164,7 @@ class VAE_Monte(nn.Module):
         maxi = log_px_given_z
         mini = log_qz - log_pz # KL(q(z|x)|p(z)) = Eq[log q(z|x) − log ⁡p(z)]
         #elbo
-        elbo = torch.mean(maxi + mini, dim=0)
+        elbo = torch.mean(maxi - mini, dim=0)
         
         return elbo
 
