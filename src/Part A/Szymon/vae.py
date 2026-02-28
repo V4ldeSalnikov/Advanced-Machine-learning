@@ -91,15 +91,14 @@ class VAE_KL(nn.Module):
            n_samples: [int]
            Number of samples to use for the Monte Carlo estimate of the ELBO.
         """
+        #info q and z   
         q = self.encoder(x)
         z = q.rsample()
+        #ele
         maxi = self.decoder(z).log_prob(x)
         mini = td.kl_divergence(q, self.prior())
+        #elbo
         elbo = torch.mean(maxi - mini, dim=0)
-        #log_px_given_z = self.decoder(z).log_prob(x)
-        #log_pz = self.prior().log_prob(z)
-        #log_qz = q.log_prob(z)
-        #elbo = torch.mean(log_px_given_z + log_pz - log_qz, dim=0)
         
         return elbo
 
@@ -154,12 +153,14 @@ class VAE_Monte(nn.Module):
            n_samples: [int]
            Number of samples to use for the Monte Carlo estimate of the ELBO.
         """
+        #  info q and z
         q = self.encoder(x)
         z = q.rsample()
-        
+        #ele
         log_px_given_z = self.decoder(z).log_prob(x)
         log_pz = self.prior().log_prob(z)
         log_qz = q.log_prob(z)
+        #elbo
         elbo = torch.mean(log_px_given_z + log_pz - log_qz, dim=0)
         
         return elbo
