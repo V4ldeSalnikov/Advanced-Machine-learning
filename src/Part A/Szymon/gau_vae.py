@@ -1,7 +1,7 @@
 #
 from train import *
 from priors import *
-from vae_KL import *
+from vae import *
 #
 import torch
 import torch.nn as nn
