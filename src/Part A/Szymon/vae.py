@@ -93,7 +93,7 @@ class VAE_KL(nn.Module):
         """
         #info q and z   
         q = self.encoder(x)
-        z = q.rsample()
+        z = q.rsample()#rep trick
         #ele
         maxi = self.decoder(z).log_prob(x)
         mini = td.kl_divergence(q, self.prior())
@@ -155,13 +155,16 @@ class VAE_Monte(nn.Module):
         """
         #  info q and z
         q = self.encoder(x)
-        z = q.rsample()
+        z = q.rsample()#rep trick
         #ele
-        log_px_given_z = self.decoder(z).log_prob(x)
-        log_pz = self.prior().log_prob(z)
-        log_qz = q.log_prob(z)
+        log_px_given_z = self.decoder(z).log_prob(x)#reco term p(x|z)
+        log_pz = self.prior().log_prob(z)#prior term p(z)
+        log_qz = q.log_prob(z)#posterior term q(z|x)
+        #ele
+        maxi = log_px_given_z
+        mini = log_qz - log_pz # KL(q(z|x)|p(z)) = Eq[log q(z|x) − log ⁡p(z)]
         #elbo
-        elbo = torch.mean(log_px_given_z + log_pz - log_qz, dim=0)
+        elbo = torch.mean(maxi + mini, dim=0)
         
         return elbo
 
