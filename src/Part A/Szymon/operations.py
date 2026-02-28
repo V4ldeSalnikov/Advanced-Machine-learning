@@ -82,24 +82,30 @@ if args.mode == 'train':
     train(model_Gaus, optimizer_Gaus, mnist_train_loader, args.epochs, args.device)
     train(model_MoG, optimizer_MoG, mnist_train_loader, args.epochs, args.device)
 
-    # Save model
+    # Save models
     torch.save(model_Gaus.state_dict(), args.model + '_Gaus.pt')
     torch.save(model_MoG.state_dict(), args.model + '_MoG.pt')
 elif args.mode == 'evaluate':
     #loading models
     model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
     model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
-    #
+    #evaluating models on test set
     ll_Gaus = evaluate_test_elbo(model_Gaus, mnist_test_loader, device)
     ll_MoG = evaluate_test_elbo(model_MoG, mnist_test_loader, device)
     # Evaluate models
     print(f"log-likelihood ELBO Gaussian Prior: {ll_Gaus:.4f}")
     print(f"log-likelihood ELBO Mixture of Gaussians Prior: {ll_MoG:.4f}")
-#elif args.mode == 'sample':
-#    model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
-#
-#    # Generate samples
-#    model.eval()
-#    with torch.no_grad():
-#        samples = (model.sample(64)).cpu() 
-#        save_image(samples.view(64, 1, 28, 28), args.samples)
+elif args.mode == 'sample':
+    #loading models
+    model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
+    model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
+    # Generate samples
+    model_Gaus.eval()
+    model_MoG.eval()
+    with torch.no_grad():
+        #generating
+        samples_Gaus = (model_Gaus.sample(64)).cpu() 
+        samples_MoG = (model_MoG.sample(64)).cpu() 
+        #saving
+        save_image(samples_Gaus.view(64, 1, 28, 28), args.samples + '_Gaus.png')
+        save_image(samples_MoG.view(64, 1, 28, 28), args.samples + '_MoG.png')
