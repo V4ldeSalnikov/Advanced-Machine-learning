@@ -2,6 +2,7 @@
 from train import *
 from priors import *
 from vae import *
+from support import *
 #
 import torch
 import torch.nn as nn
@@ -17,7 +18,7 @@ import glob
 # Parse arguments
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('mode', type=str, default='train', choices=['train', 'sample'], help='what to do when running the script (default: %(default)s)')
+parser.add_argument('mode', type=str, default='train', choices=['train', 'evaluate', 'sample'], help='what to do when running the script (default: %(default)s)')
 parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
 parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
 parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
@@ -84,7 +85,16 @@ if args.mode == 'train':
     # Save model
     torch.save(model_Gaus.state_dict(), args.model + '_Gaus.pt')
     torch.save(model_MoG.state_dict(), args.model + '_MoG.pt')
-
+elif args.mode == 'evaluate':
+    #loading models
+    model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
+    model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
+    #
+    ll_Gaus = evaluate_test_elbo(model_Gaus, mnist_test_loader, device)
+    ll_MoG = evaluate_test_elbo(model_MoG, mnist_test_loader, device)
+    # Evaluate models
+    print(f"log-likelihood ELBO Gaussian Prior: {ll_Gaus:.4f}")
+    print(f"log-likelihood ELBO Mixture of Gaussians Prior: {ll_MoG:.4f}")
 #elif args.mode == 'sample':
 #    model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))
 #
