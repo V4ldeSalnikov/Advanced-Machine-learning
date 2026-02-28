@@ -5,3 +5,7 @@
 #ignoring data folders
 /data/
 /docs/
+#
+*.pt
+*.png
+*.pyc
