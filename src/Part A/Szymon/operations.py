@@ -3,6 +3,7 @@ from train import *
 from priors import *
 from vae import *
 from support import *
+from flow import *
 #importing torch modules
 import torch
 import torch.nn as nn
@@ -41,6 +42,28 @@ mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=Fa
 M = args.latent_dim
 prior_Gaus = GaussianPrior(M)
 prior_MoG = MoGPrior(M)
+#flow prior
+base = GaussianBase(M)
+#transformations
+transformations =[]
+mask = torch.Tensor([1 if (i+j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
+    
+num_transformations = 5
+num_hidden = 8
+
+# Make a mask that is 1 for the first half of the features and 0 for the second half
+mask = torch.zeros((M,))
+mask[M//2:] = 1
+    
+for i in range(num_transformations):
+    mask = (1-mask) # Flip the mask
+    scale_net = nn.Sequential(nn.Linear(M, num_hidden), nn.ReLU(), nn.Linear(num_hidden, M))
+    translation_net = nn.Sequential(nn.Linear(M, num_hidden), nn.ReLU(), nn.Linear(num_hidden, M))
+    transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
+
+# Define flow model
+prior_flow = Flow(base, transformations).to(args.device)
+
 #Defining encoder and decoder networks
 encoder_net = nn.Sequential(
     nn.Flatten(),
@@ -64,38 +87,49 @@ encoder = GaussianEncoder(encoder_net)
 #declaring VAE models
 model_Gaus = VAE_KL(prior_Gaus, decoder, encoder).to(device)
 model_MoG = VAE_Monte(prior_MoG, decoder, encoder).to(device)
+model_Flow = VAE_Monte(prior_flow, decoder, encoder).to(device)
 #Chocie of the mode
 if args.mode == 'train':
     #Defining optimizers
     optimizer_Gaus = torch.optim.Adam(model_Gaus.parameters(), lr=1e-3)
     optimizer_MoG= torch.optim.Adam(model_MoG.parameters(), lr=1e-3)
+    optimizer_Flow = torch.optim.Adam(model_Flow.parameters(), lr=1e-3)
     #Training models
     train(model_Gaus, optimizer_Gaus, mnist_train_loader, args.epochs, args.device)
     train(model_MoG, optimizer_MoG, mnist_train_loader, args.epochs, args.device)
+    train(model_Flow, optimizer_Flow, mnist_train_loader, args.epochs, args.device)
     #Saving models
     torch.save(model_Gaus.state_dict(), args.model + '_Gaus.pt')
     torch.save(model_MoG.state_dict(), args.model + '_MoG.pt')
+    torch.save(model_Flow.state_dict(), args.model + '_Flow.pt')
 elif args.mode == 'evaluate':
     #loading models
     model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
     model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
+    model_Flow.load_state_dict(torch.load(args.model + '_Flow.pt', map_location=torch.device(args.device))) 
     #evaluating models on test set
     ll_Gaus = evaluate_test_elbo(model_Gaus, mnist_test_loader, device)
     ll_MoG = evaluate_test_elbo(model_MoG, mnist_test_loader, device)
+    ll_Flow = evaluate_test_elbo(model_Flow, mnist_test_loader, device)
     #Evaluate models
     print(f"log-likelihood ELBO Gaussian Prior: {ll_Gaus:.4f}")
     print(f"log-likelihood ELBO Mixture of Gaussians Prior: {ll_MoG:.4f}")
+    print(f"log-likelihood ELBO Flow Prior: {ll_Flow:.4f}")
 elif args.mode == 'sample':
     #loading models
     model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
     model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
+    model_Flow.load_state_dict(torch.load(args.model + '_Flow.pt', map_location=torch.device(args.device)))
     #Generating samples
     model_Gaus.eval()
     model_MoG.eval()
+    model_Flow.eval()
     with torch.no_grad():
         #generating
         samples_Gaus = (model_Gaus.sample(64)).cpu() 
         samples_MoG = (model_MoG.sample(64)).cpu() 
+        samples_Flow = (model_Flow.sample(64)).cpu()
         #saving
         save_image(samples_Gaus.view(64, 1, 28, 28), args.samples + '_Gaus.png')
         save_image(samples_MoG.view(64, 1, 28, 28), args.samples + '_MoG.png')
+        save_image(samples_Flow.view(64, 1, 28, 28), args.samples + '_Flow.png')

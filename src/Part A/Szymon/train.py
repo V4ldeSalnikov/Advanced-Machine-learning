@@ -1,4 +1,5 @@
 #importing libraries
+import torch
 from tqdm import tqdm
 
 #functions
@@ -28,7 +29,13 @@ def train(model, optimizer, data_loader, epochs, device):
         for x in data_iter:
             x = x[0].to(device)
             optimizer.zero_grad()
-            loss = model(x)
+            output = model(x)
+            if torch.is_tensor(output):
+                loss = output
+            elif hasattr(model, 'loss'):#for flow
+                loss = model.loss(x)
+            else:
+                raise TypeError("Model forward must return a loss tensor or define a loss(x) method.")
             loss.backward()
             optimizer.step()
 

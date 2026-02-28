@@ -43,7 +43,7 @@ class MoGPrior(nn.Module):
            Initial standard deviation for each component.
         """
         super(MoGPrior, self).__init__()
-        self.M = M
+        self.M = M#dimension of the latent space
         self.n_components = n_components
 
         self.logits = nn.Parameter(torch.zeros(self.n_components))
