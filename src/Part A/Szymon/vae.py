@@ -139,7 +139,7 @@ class VAE_Monte(nn.Module):
                 The encoder distribution over the latent space.
         """
             
-        super(VAE_KL, self).__init__()
+        super(VAE_Monte, self).__init__()
         self.prior = prior
         self.decoder = decoder
         self.encoder = encoder
