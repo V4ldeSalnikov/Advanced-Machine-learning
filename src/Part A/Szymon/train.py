@@ -1,13 +1,7 @@
-import torch
-import torch.nn as nn
-import torch.distributions as td
-import torch.utils.data
-from torch.nn import functional as F
+#importing libraries
 from tqdm import tqdm
 
-
-
-
+#functions
 def train(model, optimizer, data_loader, epochs, device):
     """
     Train a VAE model.

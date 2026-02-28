@@ -1,6 +1,7 @@
+#importing libraries
 import torch
 
-
+#functions
 def evaluate_test_elbo(model, test_loader, device):
     #setting model to eval mode
     model.eval()

@@ -1,21 +1,17 @@
-#
+#importing project functions from other .py files
 from train import *
 from priors import *
 from vae import *
 from support import *
-#
+#importing torch modules
 import torch
 import torch.nn as nn
-import torch.distributions as td
 import torch.utils.data
-from torch.nn import functional as F
-from tqdm import tqdm
-#
+#importing torchvision modules
 from torchvision import datasets, transforms
 from torchvision.utils import save_image, make_grid
-import glob
 
-# Parse arguments
+#parse arguments (basically receiving options specyfied in the terminal)
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('mode', type=str, default='train', choices=['train', 'evaluate', 'sample'], help='what to do when running the script (default: %(default)s)')
@@ -41,12 +37,11 @@ mnist_train_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=T
 mnist_test_loader = torch.utils.data.DataLoader(datasets.MNIST('data/', train=False, download=True,
                                                             transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: (thresshold < x).float().squeeze())])),
                                                 batch_size=args.batch_size, shuffle=True)
-
-# Define priors 
+#Defining priors
 M = args.latent_dim
 prior_Gaus = GaussianPrior(M)
 prior_MoG = MoGPrior(M)
-# Define encoder and decoder networks
+#Defining encoder and decoder networks
 encoder_net = nn.Sequential(
     nn.Flatten(),
     nn.Linear(784, 512),
@@ -55,7 +50,6 @@ encoder_net = nn.Sequential(
     nn.ReLU(),
     nn.Linear(512, M*2),
 )
-
 decoder_net = nn.Sequential(
     nn.Linear(M, 512),
     nn.ReLU(),
@@ -64,25 +58,21 @@ decoder_net = nn.Sequential(
     nn.Linear(512, 784),
     nn.Unflatten(-1, (28, 28))
 )
-
-# Define VAE model
+#declaring decoder and encoder
 decoder = BernoulliDecoder(decoder_net)
 encoder = GaussianEncoder(encoder_net)
-#
+#declaring VAE models
 model_Gaus = VAE_KL(prior_Gaus, decoder, encoder).to(device)
 model_MoG = VAE_Monte(prior_MoG, decoder, encoder).to(device)
-
-
-# Choose mode to run
+#Chocie of the mode
 if args.mode == 'train':
-    # Define optimizers
+    #Defining optimizers
     optimizer_Gaus = torch.optim.Adam(model_Gaus.parameters(), lr=1e-3)
     optimizer_MoG= torch.optim.Adam(model_MoG.parameters(), lr=1e-3)
-    # Train models
+    #Training models
     train(model_Gaus, optimizer_Gaus, mnist_train_loader, args.epochs, args.device)
     train(model_MoG, optimizer_MoG, mnist_train_loader, args.epochs, args.device)
-
-    # Save models
+    #Saving models
     torch.save(model_Gaus.state_dict(), args.model + '_Gaus.pt')
     torch.save(model_MoG.state_dict(), args.model + '_MoG.pt')
 elif args.mode == 'evaluate':
@@ -92,14 +82,14 @@ elif args.mode == 'evaluate':
     #evaluating models on test set
     ll_Gaus = evaluate_test_elbo(model_Gaus, mnist_test_loader, device)
     ll_MoG = evaluate_test_elbo(model_MoG, mnist_test_loader, device)
-    # Evaluate models
+    #Evaluate models
     print(f"log-likelihood ELBO Gaussian Prior: {ll_Gaus:.4f}")
     print(f"log-likelihood ELBO Mixture of Gaussians Prior: {ll_MoG:.4f}")
 elif args.mode == 'sample':
     #loading models
     model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
     model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
-    # Generate samples
+    #Generating samples
     model_Gaus.eval()
     model_MoG.eval()
     with torch.no_grad():
