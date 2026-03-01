@@ -64,30 +64,33 @@ for i in range(num_transformations):
 # Define flow model
 prior_flow = Flow(base, transformations).to(args.device)
 
-#Defining encoder and decoder networks
-encoder_net = nn.Sequential(
-    nn.Flatten(),
-    nn.Linear(784, 512),
-    nn.ReLU(),
-    nn.Linear(512, 512),
-    nn.ReLU(),
-    nn.Linear(512, M*2),
-)
-decoder_net = nn.Sequential(
-    nn.Linear(M, 512),
-    nn.ReLU(),
-    nn.Linear(512, 512),
-    nn.ReLU(),
-    nn.Linear(512, 784),
-    nn.Unflatten(-1, (28, 28))
-)
-#declaring decoder and encoder
-decoder = BernoulliDecoder(decoder_net)
-encoder = GaussianEncoder(encoder_net)
-#declaring VAE models
-model_Gaus = VAE_KL(prior_Gaus, decoder, encoder).to(device)
-model_MoG = VAE_Monte(prior_MoG, decoder, encoder).to(device)
-model_Flow = VAE_Monte(prior_flow, decoder, encoder).to(device)
+#helper to create independent encoder/decoder instances per model
+def make_encoder_decoder(M):
+    encoder_net = nn.Sequential(
+        nn.Flatten(),
+        nn.Linear(784, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, M*2),
+    )
+    decoder_net = nn.Sequential(
+        nn.Linear(M, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, 784),
+        nn.Unflatten(-1, (28, 28))
+    )
+    return GaussianEncoder(encoder_net), BernoulliDecoder(decoder_net)
+
+#declaring VAE models, each with its own encoder and decoder
+encoder_Gaus, decoder_Gaus = make_encoder_decoder(M)
+encoder_MoG,  decoder_MoG  = make_encoder_decoder(M)
+encoder_Flow, decoder_Flow  = make_encoder_decoder(M)
+model_Gaus = VAE_KL(prior_Gaus, decoder_Gaus, encoder_Gaus).to(device)
+model_MoG = VAE_Monte(prior_MoG, decoder_MoG, encoder_MoG).to(device)
+model_Flow = VAE_Monte(prior_flow, decoder_Flow, encoder_Flow).to(device)
 #Chocie of the mode
 if args.mode == 'train':
     #Defining optimizers
@@ -135,11 +138,20 @@ elif args.mode == 'sample':
         save_image(samples_Flow.view(64, 1, 28, 28), args.samples + '_Flow.png')
 elif args.mode == 'plot':
         model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
-        model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device))) 
-        
+        model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device)))
+        model_Flow.load_state_dict(torch.load(args.model + '_Flow.pt', map_location=torch.device(args.device)))
+
+        # 10% of test set 
+        # plot_dataset = mnist_test_loader.dataset
+        # n_plot = max(1, len(plot_dataset) // 10)
+        # plot_subset = torch.utils.data.Subset(plot_dataset, range(n_plot))
+        # plot_loader = torch.utils.data.DataLoader(plot_subset, batch_size=args.batch_size, shuffle=False)
+
         # Plot posterior samples
         print("\nPlotting approximate posterior samples...")
-        plot_posterior_samples(model_Gaus, mnist_test_loader, args.device, 
+        plot_posterior_samples(model_Gaus, mnist_test_loader, args.device,
                               n_samples_per_image=1, save_path='plot_Gaus.png')
-        plot_posterior_samples(model_MoG, mnist_test_loader, args.device, 
+        plot_posterior_samples(model_MoG, mnist_test_loader, args.device,
                               n_samples_per_image=1, save_path='plot_MoG.png')
+        plot_posterior_samples(model_Flow, mnist_test_loader, args.device,
+                              n_samples_per_image=1, save_path='plot_Flow.png')

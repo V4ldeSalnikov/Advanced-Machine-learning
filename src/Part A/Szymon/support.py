@@ -1,5 +1,11 @@
 #importing libraries
 import torch
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.decomposition import PCA
+from scipy.stats import gaussian_kde
+from matplotlib.patches import Patch
+
 
 #functions
 def evaluate_test_elbo(model, test_loader, device):
@@ -26,32 +32,24 @@ def evaluate_test_elbo(model, test_loader, device):
 
 def plot_posterior_samples(model, data_loader, device, n_samples_per_image=1, save_path='posterior_samples.png'):
     """
-    Sample from the approximate posterior and plot colored by class label,
-    overlaid with prior density contours. For latent dimensions > 2, PCA
-    projects everything onto the first two components; the prior is evaluated
-    by inverse-transforming grid points back to M-dim space.
+    Plot aggregate posterior density (KDE over encoder samples) vs prior density.
+    For latent dimensions > 2, PCA projects everything onto the first two components.
     """
 
     model.eval()
 
     all_samples = []
-    all_labels = []
 
     with torch.no_grad():
         for batch in data_loader:
-            x, y = batch
+            x, _ = batch
             x = x.to(device)
             q = model.encoder(x)
-
-            # Sample from posterior for each image in batch
             for _ in range(n_samples_per_image):
                 z = q.rsample()
                 all_samples.append(z.cpu().numpy())
-                all_labels.extend(y.numpy())
 
     all_samples = np.vstack(all_samples)
-    all_labels = np.array(all_labels)
-
     M = all_samples.shape[1]
 
     # PCA if M>2
@@ -61,13 +59,13 @@ def plot_posterior_samples(model, data_loader, device, n_samples_per_image=1, sa
         explained_var = pca.explained_variance_ratio_
         xlabel = f'PC1 ({explained_var[0]:.1%})'
         ylabel = f'PC2 ({explained_var[1]:.1%})'
-        title = f'Posterior Samples & Prior Density (PCA projected from {M}D)'
+        title = f'Aggregate Posterior & Prior Density (PCA projected from {M}D)'
     else:
         pca = None
         samples_2d = all_samples
         xlabel = 'Latent Dimension 0'
         ylabel = 'Latent Dimension 1'
-        title = 'Posterior Samples & Prior Density'
+        title = 'Aggregate Posterior & Prior Density'
 
     # Build 2D grid covering the posterior scatter with a small margin
     margin = 0.5
@@ -76,36 +74,34 @@ def plot_posterior_samples(model, data_loader, device, n_samples_per_image=1, sa
     grid_res = 150
     gx, gy = np.meshgrid(np.linspace(x_min, x_max, grid_res),
                           np.linspace(y_min, y_max, grid_res))
-    grid_2d = np.column_stack([gx.ravel(), gy.ravel()])  # (grid_res^2, 2)
+    grid_2d = np.column_stack([gx.ravel(), gy.ravel()])
 
-    # Map 2D grid points to M-dim space for prior evaluation
-    # For M>2: inverse PCA reconstructs the closest point on the PCA subspace
+    # Prior density: inverse-project grid to M-dim, evaluate prior
     grid_md = pca.inverse_transform(grid_2d) if pca is not None else grid_2d
-
-    # Evaluate prior log-density on the grid (works for both GaussianPrior and MoGPrior)
     with torch.no_grad():
         grid_tensor = torch.tensor(grid_md, dtype=torch.float32).to(device)
         log_prob = model.prior().log_prob(grid_tensor).cpu().numpy()
-    density = np.exp(log_prob).reshape(grid_res, grid_res)
+    prior_density = np.exp(log_prob).reshape(grid_res, grid_res)
 
-    plt.figure(figsize=(12, 10))
-    colors = plt.cm.tab10(np.arange(10))
+    # Aggregate posterior density via KDE over the 2D projected samples
+    kde = gaussian_kde(samples_2d.T)
+    agg_posterior = kde(grid_2d.T).reshape(grid_res, grid_res)
 
-    plt.contourf(gx, gy, density, levels=15, cmap='Greys', alpha=0.25)
-    plt.contour(gx, gy, density, levels=15, colors='grey', linewidths=0.8, alpha=0.7)
+    fig, ax = plt.subplots(figsize=(10, 8))
 
-    # Posterior samples coloured by class
-    for label in range(10):
-        mask = all_labels == label
-        plt.scatter(samples_2d[mask, 0], samples_2d[mask, 1],
-                   c=[colors[label]], label=f'Class {label}', alpha=0.6, s=30)
+    ax.contourf(gx, gy, agg_posterior, levels=15, cmap='Blues', alpha=0.6)
+    ax.contour(gx, gy, agg_posterior, levels=15, colors='blue', linewidths=0.8, alpha=0.7)
+    ax.contourf(gx, gy, prior_density, levels=15, cmap='Reds', alpha=0.3)
+    ax.contour(gx, gy, prior_density, levels=15, colors='red', linewidths=0.8, alpha=0.7)
 
-    plt.xlabel(xlabel, fontsize=12)
-    plt.ylabel(ylabel, fontsize=12)
-    plt.title(title, fontsize=14)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True, alpha=0.3)
+    legend_elements = [Patch(facecolor='blue', alpha=0.6, label='Aggregate Posterior q(z)'),
+                       Patch(facecolor='red', alpha=0.3, label='Prior p(z)')]
+    ax.legend(handles=legend_elements)
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(save_path, dpi=100, bbox_inches='tight')
-    print(f"Posterior samples plot saved to {save_path}")
+    print(f"Plot saved to {save_path}")
     plt.close()

@@ -14,8 +14,8 @@ class GaussianBase(nn.Module):
         """
         super(GaussianBase, self).__init__()
         self.D = D
-        self.mean = nn.Parameter(torch.zeros(self.D), requires_grad=False)
-        self.std = nn.Parameter(torch.ones(self.D), requires_grad=False)
+        self.register_buffer('mean', torch.zeros(self.D))
+        self.register_buffer('std', torch.ones(self.D))
 
     def forward(self):
         """
@@ -61,10 +61,13 @@ class MaskedCouplingLayer(nn.Module):
         sum_log_det_J: [torch.Tensor]
             The sum of the log determinants of the Jacobian matrices of the forward transformations of dimension `(batch_size, feature_dim)`.
         """
-        x = z
-        log_det_J = torch.zeros(z.shape[0])
+        z_masked = self.mask * z
+        s = self.scale_net(z_masked)
+        t = self.translation_net(z_masked)
+        x = z_masked + (1 - self.mask) * (z * torch.exp(s) + t)
+        log_det_J = ((1 - self.mask) * s).sum(dim=-1)
         return x, log_det_J
-    
+
     def inverse(self, x):
         """
         Transform a batch of data through the coupling layer (from data to the base).
@@ -78,8 +81,11 @@ class MaskedCouplingLayer(nn.Module):
         sum_log_det_J: [torch.Tensor]
             The sum of the log determinants of the Jacobian matrices of the inverse transformations.
         """
-        z = x
-        log_det_J = torch.zeros(x.shape[0])
+        x_masked = self.mask * x
+        s = self.scale_net(x_masked)
+        t = self.translation_net(x_masked)
+        z = x_masked + (1 - self.mask) * ((x - t) * torch.exp(-s))
+        log_det_J = -((1 - self.mask) * s).sum(dim=-1)
         return z, log_det_J
 
 
@@ -153,7 +159,10 @@ class Flow(nn.Module):
             The log probability of the data under the flow.
         """
         z, log_det_J = self.inverse(x)
-        return self.base().log_prob(z) + log_det_J
+        base_dist = self.base()
+        # Ensure z is on the same device as the base distribution parameters
+        z = z.to(self.base.mean.device)
+        return base_dist.log_prob(z) + log_det_J
     
     def sample(self, sample_shape=(1,)):
         """
