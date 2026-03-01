@@ -15,7 +15,7 @@ from torchvision.utils import save_image, make_grid
 #parse arguments (basically receiving options specyfied in the terminal)
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('mode', type=str, default='train', choices=['train', 'evaluate', 'sample'], help='what to do when running the script (default: %(default)s)')
+parser.add_argument('mode', type=str, default='train', choices=['train', 'evaluate', 'sample', 'plot'], help='what to do when running the script (default: %(default)s)')
 parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
 parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
 parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
@@ -133,3 +133,13 @@ elif args.mode == 'sample':
         save_image(samples_Gaus.view(64, 1, 28, 28), args.samples + '_Gaus.png')
         save_image(samples_MoG.view(64, 1, 28, 28), args.samples + '_MoG.png')
         save_image(samples_Flow.view(64, 1, 28, 28), args.samples + '_Flow.png')
+elif args.mode == 'plot':
+        model_Gaus.load_state_dict(torch.load(args.model + '_Gaus.pt', map_location=torch.device(args.device)))
+        model_MoG.load_state_dict(torch.load(args.model + '_MoG.pt', map_location=torch.device(args.device))) 
+        
+        # Plot posterior samples
+        print("\nPlotting approximate posterior samples...")
+        plot_posterior_samples(model_Gaus, mnist_test_loader, args.device, 
+                              n_samples_per_image=1, save_path='plot_Gaus.png')
+        plot_posterior_samples(model_MoG, mnist_test_loader, args.device, 
+                              n_samples_per_image=1, save_path='plot_MoG.png')
