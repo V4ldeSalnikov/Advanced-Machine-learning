@@ -68,18 +68,26 @@ prior_flow = Flow(base, transformations).to(args.device)
 def make_encoder_decoder(M):
     encoder_net = nn.Sequential(
         nn.Flatten(),
+        nn.Linear(784, 784),
+        nn.ReLU(),
         nn.Linear(784, 512),
         nn.ReLU(),
-        nn.Linear(512, 512),
+        nn.Linear(512, 256),
         nn.ReLU(),
-        nn.Linear(512, M*2),
+        nn.Linear(256, 128),
+        nn.ReLU(),
+        nn.Linear(128, M*2),
     )
     decoder_net = nn.Sequential(
-        nn.Linear(M, 512),
+        nn.Linear(M, 128),
         nn.ReLU(),
-        nn.Linear(512, 512),
+        nn.Linear(128, 256),
+        nn.ReLU(),
+        nn.Linear(256, 512),
         nn.ReLU(),
         nn.Linear(512, 784),
+        nn.ReLU(),
+        nn.Linear(784, 784),
         nn.Unflatten(-1, (28, 28))
     )
     return GaussianEncoder(encoder_net), BernoulliDecoder(decoder_net)
