@@ -25,7 +25,7 @@ from tqdm import tqdm
 from .ddpm import DDPM, FcNetwork, train as ddpm_train
 from .base import GenerativeModel
 from .registry import ModelRegistry
-from .beta_vae import (
+from .vae import (
     BetaVAE,
     build_beta_vae,
     train_beta_vae,
@@ -120,6 +120,12 @@ class LatentDDPMModel(GenerativeModel):
         T: int = 1000,
         beta_1: float = 1e-4,
         beta_T: float = 2e-2,
+        prior_type: str = "flow",
+        num_flow_transformations: int = 5,
+        flow_hidden: int = 8,
+        mog_components: int = 10,
+        # Kept for checkpoint back-compat; ignored — always Gaussian.
+        decoder_type: str = "gaussian",
     ):
         super().__init__(device)
         self.beta = beta
@@ -130,11 +136,21 @@ class LatentDDPMModel(GenerativeModel):
         self.T = T
         self.beta_1 = beta_1
         self.beta_T = beta_T
+        self.prior_type = prior_type
+        self.decoder_type = "gaussian"          # always Gaussian likelihood p(x|z)
+        self.num_flow_transformations = num_flow_transformations
+        self.flow_hidden = flow_hidden
+        self.mog_components = mog_components
 
-        # Build sub-models
+        # Build sub-models — decoder is always Gaussian (project requirement).
         self.vae: BetaVAE = build_beta_vae(
             latent_dim=latent_dim, beta=beta,
             hidden=vae_hidden, device=device,
+            prior_type=prior_type,
+            decoder_type="gaussian",
+            num_flow_transformations=num_flow_transformations,
+            flow_hidden=flow_hidden,
+            mog_components=mog_components,
         )
         net = LatentFcNetwork(latent_dim, ddpm_hidden, ddpm_layers)
         self.ddpm: DDPM = DDPM(net, beta_1=beta_1, beta_T=beta_T, T=T).to(self.device)
@@ -232,6 +248,11 @@ class LatentDDPMModel(GenerativeModel):
                 "T": self.T,
                 "beta_1": self.beta_1,
                 "beta_T": self.beta_T,
+                "prior_type": self.prior_type,
+                "decoder_type": self.decoder_type,
+                "num_flow_transformations": self.num_flow_transformations,
+                "flow_hidden": self.flow_hidden,
+                "mog_components": self.mog_components,
             },
         }, path)
 

@@ -13,10 +13,41 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid
+from torchvision import datasets, transforms
 
-from .fid import compute_fid
+from .fid import Classifier, compute_fid
 from .data import get_real_images_for_fid
 from .models.base import GenerativeModel
+
+# Path to the provided classifier checkpoint (required by project spec).
+# Resolve relative to _this_ file so it works regardless of cwd.
+_CLASSIFIER_CKPT = str(Path(__file__).parent / "mnist_classifier.pth")
+
+
+def _ensure_classifier_ckpt(device: str = "cpu") -> str:
+    """Train and save the MNIST classifier if the checkpoint does not exist."""
+    ckpt = Path(_CLASSIFIER_CKPT)
+    if ckpt.exists():
+        return str(ckpt)
+
+    print("[FID] Training MNIST classifier (one-time) ...")
+    transform = transforms.Compose([transforms.ToTensor()])
+    data = datasets.MNIST("data/", train=True, download=True, transform=transform)
+    loader = torch.utils.data.DataLoader(data, batch_size=512, shuffle=True)
+
+    clf = Classifier().to(device)
+    opt = torch.optim.Adam(clf.parameters(), lr=1e-3)
+    clf.train()
+    for epoch in range(3):
+        for imgs, labels in loader:
+            imgs, labels = imgs.to(device), labels.to(device)
+            opt.zero_grad()
+            torch.nn.functional.cross_entropy(clf(imgs), labels).backward()
+            opt.step()
+
+    torch.save(clf.state_dict(), str(ckpt))
+    print(f"[FID] Classifier saved to {ckpt}")
+    return str(ckpt)
 
 
 # ------------------------------------------------------------------
@@ -67,14 +98,23 @@ def measure_sampling_speed(model: GenerativeModel, n_samples: int = 100,
 # 3. FID evaluation
 # ------------------------------------------------------------------
 
+def _to_minus1_plus1(x: torch.Tensor) -> torch.Tensor:
+    """Rescale tensor from [0, 1] to [-1, 1] as required by fid.py."""
+    return x * 2.0 - 1.0
+
+
 def evaluate_fid(model: GenerativeModel, n_gen: int = 10000,
                  device: str = "cpu", n_real: int = 10000) -> float:
     """
     Generate *n_gen* samples and compute FID vs. MNIST test images.
+
+    Images are rescaled from [0, 1] to [-1, 1] to match the range
+    expected by the provided ``fid.py`` / ``mnist_classifier.pth``.
     """
-    real = get_real_images_for_fid(n_real)
-    gen = model.sample(n_gen).cpu()
-    return compute_fid(real, gen, device=device)
+    ckpt = _ensure_classifier_ckpt(device)
+    real = _to_minus1_plus1(get_real_images_for_fid(n_real))
+    gen = _to_minus1_plus1(model.sample(n_gen).cpu())
+    return compute_fid(real, gen, device=device, classifier_ckpt=ckpt)
 
 
 # ------------------------------------------------------------------
@@ -95,7 +135,8 @@ def compare_models(
     results: Dict[str, dict] = {}
     save_dir = Path(save_dir) if save_dir else None
 
-    real = get_real_images_for_fid(n_fid)
+    ckpt = _ensure_classifier_ckpt(device)
+    real = _to_minus1_plus1(get_real_images_for_fid(n_fid))
 
     for m in models:
         print(f"\n{'='*60}")
@@ -106,9 +147,9 @@ def compare_models(
         sp = (save_dir / f"samples_{m.name}.png") if save_dir else None
         show_samples(m, n=4, save_path=sp)
 
-        # FID
-        gen = m.sample(n_fid).cpu()
-        fid = compute_fid(real, gen, device=device)
+        # FID  – rescale [0,1] → [-1,1] for fid.py
+        gen = _to_minus1_plus1(m.sample(n_fid).cpu())
+        fid = compute_fid(real, gen, device=device, classifier_ckpt=ckpt)
         print(f"  FID = {fid:.2f}")
 
         # Speed
