@@ -147,9 +147,26 @@ class LatentDDPMModel(GenerativeModel):
     # Training (two-stage)
     # ------------------------------------------------------------------
 
-    def train_vae(self, train_loader, epochs: int = 50, lr: float = 1e-3):
-        """Stage 1: train the β-VAE."""
-        train_beta_vae(self.vae, train_loader, epochs, lr=lr, device=str(self.device))
+    def train_vae(self, train_loader, epochs: int = 50, lr: float = 1e-3, beta_warmup_epochs: int = None):
+        """
+        Stage 1: train the β-VAE.
+        
+        Parameters
+        ----------
+        train_loader : DataLoader
+            Training data.
+        epochs : int
+            Number of training epochs.
+        lr : float
+            Learning rate.
+        beta_warmup_epochs : int
+            Number of epochs to warmup β from 0 to target (default: half of epochs).
+            This helps prevent posterior collapse.
+        """
+        if beta_warmup_epochs is None:
+            beta_warmup_epochs = epochs // 2
+        train_beta_vae(self.vae, train_loader, epochs, lr=lr, device=str(self.device),
+                       beta_warmup_epochs=beta_warmup_epochs)
 
     def train_ddpm(self, train_loader, epochs: int = 100, lr: float = 2e-4):
         """
