@@ -65,7 +65,7 @@ class MaskedCouplingLayer(nn.Module):
     def forward(self, z):
         """Base -> data direction.  Returns (x, log_det_J)."""
         z_masked = self.mask * z
-        s = self.scale_net(z_masked)
+        s = self.scale_net(z_masked).clamp(-2, 2)
         t = self.translation_net(z_masked)
         x = z_masked + (1 - self.mask) * (z * torch.exp(s) + t)
         log_det_J = ((1 - self.mask) * s).sum(dim=-1)
@@ -74,7 +74,7 @@ class MaskedCouplingLayer(nn.Module):
     def inverse(self, x):
         """Data -> base direction.  Returns (z, log_det_J)."""
         x_masked = self.mask * x
-        s = self.scale_net(x_masked)
+        s = self.scale_net(x_masked).clamp(-2, 2)
         t = self.translation_net(x_masked)
         z = x_masked + (1 - self.mask) * ((x - t) * torch.exp(-s))
         log_det_J = -((1 - self.mask) * s).sum(dim=-1)
@@ -202,7 +202,7 @@ class GaussianEncoder(nn.Module):
 
     def forward(self, x):
         mean, log_std = torch.chunk(self.net(x), 2, dim=-1)
-        return td.Independent(td.Normal(mean, torch.exp(log_std)), 1)
+        return td.Independent(td.Normal(mean, torch.exp(log_std.clamp(-5, 2))), 1)
 
 
 class GaussianDecoder(nn.Module):
