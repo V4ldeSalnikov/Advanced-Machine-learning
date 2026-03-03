@@ -1,15 +1,26 @@
 """
 Self-contained DDPM implementation for the project.
 
-Contains:
+Ported from
+-----------
+``DDPM/ddpm.py``
+    Source: ``Advanced-Machine-learning/DDPM/ddpm.py``
+    DTU course 02460 code by Jes Frellsen (2024).
+    Contains the ``DDPM`` class and the ``train`` function.
+
+``DDPM/unet.py``
+    Source: ``Advanced-Machine-learning/DDPM/unet.py``
+    Based on code by Muhammad Firmansyah Kasim (MIT License, 2022).
+    Contains the ``Unet`` noise-prediction network for 28×28 MNIST.
+
+This file re-exports both, plus adds ``FcNetwork`` (a lightweight FC
+alternative to U-Net used by the latent-space DDPM).
+
+Contents:
     - ``DDPM``          — Denoising Diffusion Probabilistic Model
     - ``train``         — generic DDPM training loop
     - ``FcNetwork``     — simple fully-connected noise-prediction network
     - ``Unet``          — U-Net noise-prediction network for 28×28 MNIST
-
-The DDPM and train function are based on the DTU course 02460 code by
-Jes Frellsen (2024).  The Unet is based on code by Muhammad Firmansyah Kasim
-(MIT License, 2022).
 """
 
 import torch

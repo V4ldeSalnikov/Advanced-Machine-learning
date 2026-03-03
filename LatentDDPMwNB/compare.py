@@ -174,6 +174,38 @@ def compare_models(
 # 5. Latent-space visualisation
 # ------------------------------------------------------------------
 
+def _kde_contour(ax, pts, color, label, levels=14, fill_alpha=0.18, line_alpha=0.85):
+    """
+    Draw filled + outline KDE contours for a 2-D point cloud.
+
+    Parameters
+    ----------
+    pts : np.ndarray, shape (N, 2)
+    color : matplotlib color string
+    """
+    from scipy.stats import gaussian_kde
+
+    kde = gaussian_kde(pts.T, bw_method="scott")
+
+    # Build evaluation grid from the data range with a small margin
+    margin = 0.10
+    x_min, x_max = pts[:, 0].min(), pts[:, 0].max()
+    y_min, y_max = pts[:, 1].min(), pts[:, 1].max()
+    dx = (x_max - x_min) * margin
+    dy = (y_max - y_min) * margin
+    xx, yy = np.meshgrid(
+        np.linspace(x_min - dx, x_max + dx, 200),
+        np.linspace(y_min - dy, y_max + dy, 200),
+    )
+    zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
+
+    ax.contourf(xx, yy, zz, levels=levels, colors=[color], alpha=fill_alpha)
+    cs = ax.contour(xx, yy, zz, levels=levels, colors=[color], alpha=line_alpha,
+                    linewidths=0.8)
+    # invisible proxy for the legend
+    ax.plot([], [], color=color, linewidth=1.5, label=label)
+
+
 def plot_latent_distributions(
     latent_ddpm_model,  # LatentDDPMModel
     data_loader,
@@ -182,36 +214,65 @@ def plot_latent_distributions(
     save_path: str | Path | None = None,
 ):
     """
-    Plot three distributions in the first two latent dimensions:
-    1. VAE prior  p(z) = N(0, I)
-    2. Aggregate posterior  q(z) = 1/N Σ q(z|x_i)
-    3. Learned DDPM prior (samples from the latent DDPM)
+    Overlay KDE contour plots (filled + outline) in PCA space.
 
-    This is the plot required by the project description for comparing
-    the β-VAE prior and the learned latent DDPM distribution against
-    the aggregate posterior.
+    Two panels:
+      Left  — Aggregate posterior q(z) vs VAE prior p(z) = N(0,I)
+      Right — Aggregate posterior q(z) vs Learned DDPM prior
+
+    PCA is fit on the aggregate posterior so the axes reflect the
+    directions of maximum variance in the encoder output.  Axis labels
+    include the fraction of variance explained by each PC.
     """
-    d0, d1 = dims
+    from sklearn.decomposition import PCA
 
-    z_prior = latent_ddpm_model.get_vae_prior_samples(n_samples)
-    z_agg = latent_ddpm_model.get_aggregate_posterior_samples(data_loader, n_samples)
-    z_ddpm = latent_ddpm_model.get_ddpm_prior_samples(n_samples)
+    # ---- collect samples ---------------------------------------------------
+    z_agg  = latent_ddpm_model.get_aggregate_posterior_samples(data_loader, n_samples).numpy()
+    z_prior = latent_ddpm_model.get_vae_prior_samples(n_samples).numpy()
+    z_ddpm  = latent_ddpm_model.get_ddpm_prior_samples(n_samples).numpy()
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    titles = ["VAE prior N(0,I)", "Aggregate posterior", "Learned DDPM prior"]
-    data = [z_prior, z_agg, z_ddpm]
-    colors = ["tab:blue", "tab:orange", "tab:green"]
+    # ---- fit PCA on aggregate posterior ------------------------------------
+    pca = PCA(n_components=2)
+    pca.fit(z_agg)
+    var = pca.explained_variance_ratio_ * 100  # percent
 
-    for ax, z, title, c in zip(axes, data, titles, colors):
-        ax.scatter(z[:, d0].numpy(), z[:, d1].numpy(), s=1, alpha=0.3, c=c)
-        ax.set_title(title)
-        ax.set_xlabel(f"z[{d0}]")
-        ax.set_ylabel(f"z[{d1}]")
-        ax.set_aspect("equal")
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-5, 5)
+    agg_2d   = pca.transform(z_agg)
+    prior_2d = pca.transform(z_prior)
+    ddpm_2d  = pca.transform(z_ddpm)
 
-    plt.tight_layout()
+    xlabel = f"PC1 ({var[0]:.1f}%)"
+    ylabel = f"PC2 ({var[1]:.1f}%)"
+
+    # ---- styling -----------------------------------------------------------
+    BLUE = "#3A6BC9"   # aggregate posterior
+    RED  = "#D95F4B"   # VAE prior / DDPM prior
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), facecolor="white")
+
+    panel_cfg = [
+        (axes[0], prior_2d, RED,  "Prior p(z)",
+         agg_2d,  BLUE, "Aggregate Posterior q(z)",
+         "VAE Prior  vs  Aggregate Posterior"),
+        (axes[1], ddpm_2d, RED,  "DDPM Prior",
+         agg_2d,  BLUE, "Aggregate Posterior q(z)",
+         "Learned DDPM Prior  vs  Aggregate Posterior"),
+    ]
+
+    for ax, pts_a, col_a, lbl_a, pts_b, col_b, lbl_b, title in panel_cfg:
+        ax.set_facecolor("#F2F2F2")
+        ax.grid(True, color="white", linewidth=0.8, zorder=0)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        _kde_contour(ax, pts_a, col_a, lbl_a)
+        _kde_contour(ax, pts_b, col_b, lbl_b)
+
+        ax.set_xlabel(xlabel, fontsize=11)
+        ax.set_ylabel(ylabel, fontsize=11)
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=10)
+        ax.legend(loc="upper right", framealpha=0.85, fontsize=9)
+
+    plt.tight_layout(pad=2.0)
     if save_path:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, bbox_inches="tight", dpi=150)

@@ -1,9 +1,17 @@
 """
 Pixel-space DDPM with a U-Net backbone on MNIST.
 
-This module wraps the ``DDPM`` and ``Unet`` classes contributed by a teammate
-(located in ``Advanced-Machine-learning/DDPM/``) and exposes them through the
-unified ``GenerativeModel`` interface used by the comparison pipeline.
+Ported from
+-----------
+``DDPM/ddpm.py``  — DDPM core and training loop
+    (DTU course 02460 code by Jes Frellsen, 2024)
+``DDPM/unet.py``  — U-Net noise-prediction network
+    (based on code by Muhammad Firmansyah Kasim, MIT License, 2022)
+
+Both files are located in ``Advanced-Machine-learning/DDPM/`` and are used
+here unchanged through the shared ``models/ddpm.py`` re-export.  This module
+provides only the ``GenerativeModel`` wrapper so the pixel-space DDPM fits
+seamlessly into the comparison pipeline.
 """
 
 from __future__ import annotations
