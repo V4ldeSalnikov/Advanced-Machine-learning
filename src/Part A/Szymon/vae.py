@@ -143,28 +143,19 @@ class VAE_Monte(nn.Module):
         self.encoder = encoder
 
     def elbo(self, x):
-        """
-        Compute the ELBO for the given batch of data.
-
-        Parameters:
-        x: [torch.Tensor] 
-           A tensor of dimension `(batch_size, feature_dim1, feature_dim2, ...)`
-           n_samples: [int]
-           Number of samples to use for the Monte Carlo estimate of the ELBO.
-        """
-        #  info q and z
+        #info q and z
         q = self.encoder(x)
         z = q.rsample()#rep trick
-        #ele
+        #ele to ele
         log_px_given_z = self.decoder(z).log_prob(x)#reco term p(x|z)
         log_pz = self.prior().log_prob(z)#prior term p(z)
         log_qz = q.log_prob(z)#posterior term q(z|x)
-        #ele
-        maxi = log_px_given_z
+        #ele elbo
+        maxi = log_px_given_z#log p(x|z)
         mini = log_qz - log_pz # KL(q(z|x)|p(z)) = Eq[log q(z|x) − log ⁡p(z)]
         #elbo
-        elbo = torch.mean(maxi - mini, dim=0)
-        
+        elbo = torch.mean(maxi - mini, dim=0)# ELBO = Eq[log p(x|z)] - KL(q(z|x)||p(z))
+        #output
         return elbo
 
     def sample(self, n_samples=1):
