@@ -33,8 +33,7 @@ from .vae import (
 
 
 # ---------------------------------------------------------------
-# Deeper FC network for the latent DDPM (latent dim is small, no
-# need for U-Net)
+# Deeper FC network for the latent DDPM (latent dim is small, if U-Net fails.
 # ---------------------------------------------------------------
 
 class LatentFcNetwork(nn.Module):
