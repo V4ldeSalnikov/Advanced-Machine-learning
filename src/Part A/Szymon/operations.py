@@ -157,9 +157,6 @@ elif args.mode == 'plot':
 
         # Plot posterior samples
         print("\nPlotting approximate posterior samples...")
-        plot_posterior_samples(model_Gaus, mnist_test_loader, args.device,
-                              n_samples_per_image=1, save_path='plot_Gaus.png')
-        plot_posterior_samples(model_MoG, mnist_test_loader, args.device,
-                              n_samples_per_image=1, save_path='plot_MoG.png')
-        plot_posterior_samples(model_Flow, mnist_test_loader, args.device,
-                              n_samples_per_image=1, save_path='plot_Flow.png')
+        plot_posterior_samples(model_Gaus, mnist_test_loader, args.device, save_path='plot_Gaus.png')
+        plot_posterior_samples(model_MoG,  mnist_test_loader, args.device, save_path='plot_MoG.png')
+        plot_posterior_samples(model_Flow, mnist_test_loader, args.device, save_path='plot_Flow.png')
