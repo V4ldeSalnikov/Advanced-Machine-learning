@@ -228,15 +228,15 @@ def pullback_metric(z, decoder):
     #returning the output
     return metric
 
-def plot_metric (metric,range):
-    X,Y = torch.meshgrid ((range, range))
+def plot_metric (metric,rangex,rangey):
+    X,Y = torch.meshgrid ((rangex, rangey), indexing='ij')
     XY = torch.concatenate((X.reshape(-1,1),Y.reshape(-1,1)), dim =1)
     G = metric(XY) # NxDxD
-    trG = G[:,0,0] + G[:,1,1] # N
-    plt.imshow(trG.reshape(X.shape).detach().numpy().T,
-               extent=(range[0], range[-1], range[0], range[-1]),
+    trG = G[:,0,0] + G[:,1,1] # N   
+    im = plt.imshow(trG.reshape(X.shape).detach().numpy().T,
+               extent=(rangex[0], rangex[-1], rangey[0], rangey[-1]),
                origin="lower")
-
+    plt.colorbar(im, ticks=range(10))
 class PLcurve :
     def __init__ (self,x0,x1,N) :
         """
@@ -515,20 +515,44 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(args.experiment_folder + "/model.pt"))
         model.eval()
         #
+        all_z = []
+        all_labels = []
+        with torch.no_grad():
+            for x, y in mnist_test_loader:
+                x = x.to(device)
+                z = model.encoder(x).mean.detach().to('cpu')  # shape: (batch_size, 2)
+                all_z.append(z)
+                all_labels.append(y)
+        #
+        all_z = torch.cat(all_z, dim=0).numpy()      # shape: (num_samples, 2)
+        all_labels = torch.cat(all_labels, dim=0).numpy()  # shape: (num_samples,)
+        #
+        z1_min = all_z[:, 0].min().item()
+        z1_max = all_z[:, 0].max().item()
+        z2_min = all_z[:, 1].min().item()
+        z2_max = all_z[:, 1].max().item()
+        #
+        plt.figure(figsize=(8, 8))
+        scatter = plt.scatter(all_z[:, 0], all_z[:, 1], c=all_labels, cmap='tab10', s=5)
+        #plt.colorbar(scatter, ticks=range(10))
+        plt.xlabel('z1')
+        plt.ylabel('z2')
 
-        r = 50
+
         metric = lambda z: pullback_metric(z, model.decoder)
-        plot_metric(metric, torch.linspace(-r, r, 100))
+        plot_metric(metric, torch.linspace(z1_min, z1_max, 100),torch.linspace(z2_min, z2_max, 100))
         N = 20
         for _ in range (5):
-            c = PLcurve (2* r *( torch.rand (2) -0.5) , 2* r *( torch.rand(2) -0.5) , N )
+            idx1 = torch.randint(0, all_z.shape[0], (1,))
+            idx2 = torch.randint(0, all_z.shape[0], (1,))
+            z1 = torch.from_numpy(all_z[idx1]).float().squeeze(0)
+            z2 = torch.from_numpy(all_z[idx2]).float().squeeze(0)
+            c = PLcurve (z1 , z2 , N )
             c.plot()
             print(' Energy before optimization is {} '. format ( curve_energy ( metric ,c.points () ) . item () ) )
             connecting_geodesic ( metric , c )
             print ( ' Energy after optimization is {} '. format ( curve_energy ( metric , c.points () ) . item () ) )
             c.plot()
-
-        plt.axis((-r,r,-r,r))
 
 
 
