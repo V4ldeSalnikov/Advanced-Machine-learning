@@ -204,7 +204,63 @@ def train(model, optimizer, data_loader, epochs, device):
                     f"Stopping training at total epoch {epoch} and current loss: {loss:.1f}"
                 )
                 break
+def pullback_metric(z, decoder):
+    #detach to break gradient from previous computations, clone to create a new tensor, and requires_grad_ to enable gradient computation for z (for later use in autograd)
+    z = z.detach().clone().requires_grad_(True) #points in the latent space, shape (N, 2)
+    #geting the mean of the decoder at the points z, which will be used to compute the Jacobian
+    mean_points = decoder(z).mean
+    #mu.shape = (N, D), z.shape = (N, 2)
+    num_points= mean_points.shape[0]
+    #preallocating the pullback metric tensor, which will have shape (N, 2, 2) since we are in a 2D latent space and the metric is a 2x2 matrix for each point
+    metric = torch.zeros(num_points, 2, 2, device=z.device)
+    #looping through each point in the latent space
+    for i in range(num_points):
+        #selecting the i-th point in the latent space, and enabling gradient computation for it
+        z_i = z[i:i+1]
+        z_i = z_i.clone().requires_grad_(True)#cloning to have new copy and enabling grad
+        #evaluating the decoder at the i-th point to get the mean in the data space, which will be used to compute the Jacobian
+        mu_i = decoder(z_i).mean
+        #computing the Jacobian of the decoder at the i-th point
+        jacobian = torch.autograd.grad(mu_i.sum(), z_i)[0][0]  # .sum() to get scalar output for grad, [0][0] to get the Jacobian vector of shape (D,) where D is the dimension of the data space
+        #multiplying the Jacobian by its transpose to get the pullback metric at the i-th point
+        metric[i] = jacobian[None, :] @ jacobian[:, None]
+    #returning the output
+    return metric
 
+def plot_metric (metric,range):
+    X,Y = torch.meshgrid ((range, range))
+    XY = torch.concatenate((X.reshape(-1,1),Y.reshape(-1,1)), dim =1)
+    G = metric(XY) # NxDxD
+    trG = G[:,0,0] + G[:,1,1] # N
+    plt.imshow(trG.reshape(X.shape).detach().numpy().T,
+               extent=(range[0], range[-1], range[0], range[-1]),
+               origin="lower")
+#def compute_energy_curve(decoder_net, z_curve):
+#
+#    #getting the number of points along the curve
+#    num_points = z_curve.shape[0]
+#    #creating a variable to store the energy along the curve
+#    energy = 0.0
+#    #going through points along the curve and computing the energy increment at each point
+#    for i in range(num_points - 1):
+#        z_i = z_curve[i].detach().clone().requires_grad_(True)
+#        z_next = z_curve[i + 1]
+#        # Compute mean at z_i
+#        mu_i = decoder_net(z_i)
+#        # Flatten output if needed
+#        mu_i_flat = mu_i.view(-1)
+#        # Compute Jacobian: output_dim x latent_dim
+#        J_i = torch.autograd.functional.jacobian(lambda z: decoder_net(z).view(-1), z_i)
+#        # Pull-back metric: G_i = J^T J
+#        G_i = J_i.t() @ J_i
+#        dz = (z_next - z_i).unsqueeze(0)  # shape: 1 x latent_dim
+#        # Energy increment: dz^T G dz
+#        e = dz @ G_i @ dz.t()
+#        energy += e.squeeze()
+#            
+#
+#
+#    return energy
 
 if __name__ == "__main__":
     from torchvision import datasets, transforms
@@ -439,3 +495,11 @@ if __name__ == "__main__":
         ).to(device)
         model.load_state_dict(torch.load(args.experiment_folder + "/model.pt"))
         model.eval()
+        #
+
+        r = 5
+        metric = lambda z: pullback_metric(z, model.decoder)
+        plot_metric(metric, torch.linspace(-r, r, 100))
+        plt.title("Pull-back metric trace")
+        experiments_folder = args.experiment_folder
+        plt.savefig(f"{experiments_folder}/pullback_metric_trace.png", dpi=100, bbox_inches='tight')
