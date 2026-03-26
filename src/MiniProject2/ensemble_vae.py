@@ -280,32 +280,6 @@ def connecting_geodesic(metric, curve):
     for iter in range(max_iter):
         opt.zero_grad()
         opt.step(closure)
-#def compute_energy_curve(decoder_net, z_curve):
-#
-#    #getting the number of points along the curve
-#    num_points = z_curve.shape[0]
-#    #creating a variable to store the energy along the curve
-#    energy = 0.0
-#    #going through points along the curve and computing the energy increment at each point
-#    for i in range(num_points - 1):
-#        z_i = z_curve[i].detach().clone().requires_grad_(True)
-#        z_next = z_curve[i + 1]
-#        # Compute mean at z_i
-#        mu_i = decoder_net(z_i)
-#        # Flatten output if needed
-#        mu_i_flat = mu_i.view(-1)
-#        # Compute Jacobian: output_dim x latent_dim
-#        J_i = torch.autograd.functional.jacobian(lambda z: decoder_net(z).view(-1), z_i)
-#        # Pull-back metric: G_i = J^T J
-#        G_i = J_i.t() @ J_i
-#        dz = (z_next - z_i).unsqueeze(0)  # shape: 1 x latent_dim
-#        # Energy increment: dz^T G dz
-#        e = dz @ G_i @ dz.t()
-#        energy += e.squeeze()
-#            
-#
-#
-#    return energy
 
 if __name__ == "__main__":
     from torchvision import datasets, transforms
@@ -542,11 +516,11 @@ if __name__ == "__main__":
         model.eval()
         #
 
-        r = 5
+        r = 50
         metric = lambda z: pullback_metric(z, model.decoder)
         plot_metric(metric, torch.linspace(-r, r, 100))
         N = 20
-        for _ in range (25) :
+        for _ in range (5):
             c = PLcurve (2* r *( torch.rand (2) -0.5) , 2* r *( torch.rand(2) -0.5) , N )
             c.plot()
             print(' Energy before optimization is {} '. format ( curve_energy ( metric ,c.points () ) . item () ) )
