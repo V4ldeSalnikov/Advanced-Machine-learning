@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.distributions as td
 import torch.utils.data
+import torch.optim as optim
 from tqdm import tqdm
 from copy import deepcopy
 import os
@@ -235,6 +236,50 @@ def plot_metric (metric,range):
     plt.imshow(trG.reshape(X.shape).detach().numpy().T,
                extent=(range[0], range[-1], range[0], range[-1]),
                origin="lower")
+
+class PLcurve :
+    def __init__ (self,x0,x1,N) :
+        """
+        Represent the piecewise linear curve connecting x0 to x1 using a
+        total of N nodes ( including end - points )
+        """
+        super(PLcurve,self).__init__ ()
+        self.x0 = x0.reshape(1,-1) # 1 xD
+        self.x1 = x1.reshape(1,-1) # 1 xD
+        self.N = N
+
+        t = torch.linspace(0, 1, N).reshape(N, 1) # Nx1
+        c = (1 - t) @ self.x0 + t @ self.x1 # NxD
+        self.params = c[1:-1] # (N -2) xD
+        self.params.requires_grad = True
+    def points(self):
+        c = torch.concatenate((self.x0, self.params, self.x1), axis=0) #NxD
+        return c
+    def plot ( self ) :
+        c = self . points () . detach () . numpy ()
+        plt . plot ( c [: , 0] , c [: , 1]) 
+
+
+def curve_energy (metric, curve) :
+
+    G = metric(curve[:-1]) # (N -1) xDxD
+    delta = curve[1:] - curve[:-1] # (N -1) xD
+    tmp = torch.bmm(G, delta.unsqueeze(-1)).squeeze(-1) # (N -1) xD
+    energy = torch.sum(delta * tmp)
+    return energy
+
+def connecting_geodesic(metric, curve):
+    opt = optim.Adam([curve.params], lr=0.5)
+    def closure():
+        opt.zero_grad()
+        energy = curve_energy(metric, curve.points())
+        energy.backward()
+        return energy
+
+    max_iter = 1000
+    for iter in range(max_iter):
+        opt.zero_grad()
+        opt.step(closure)
 #def compute_energy_curve(decoder_net, z_curve):
 #
 #    #getting the number of points along the curve
@@ -500,6 +545,20 @@ if __name__ == "__main__":
         r = 5
         metric = lambda z: pullback_metric(z, model.decoder)
         plot_metric(metric, torch.linspace(-r, r, 100))
-        plt.title("Pull-back metric trace")
+        N = 20
+        for _ in range (5) :
+            c = PLcurve (2* r *( torch.rand (2) -0.5) , 2* r *( torch.rand(2) -0.5) , N )
+            c.plot()
+            print(' Energy before optimization is {} '. format ( curve_energy ( metric ,c.points () ) . item () ) )
+            connecting_geodesic ( metric , c )
+            print ( ' Energy after optimization is {} '. format ( curve_energy ( metric , c.points () ) . item () ) )
+            c.plot()
+
+        plt.axis((-r,r,-r,r))
+
+
+
+
+
         experiments_folder = args.experiment_folder
         plt.savefig(f"{experiments_folder}/pullback_metric_trace.png", dpi=100, bbox_inches='tight')
