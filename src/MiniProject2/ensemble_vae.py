@@ -546,7 +546,7 @@ if __name__ == "__main__":
         metric = lambda z: pullback_metric(z, model.decoder)
         plot_metric(metric, torch.linspace(-r, r, 100))
         N = 20
-        for _ in range (5) :
+        for _ in range (25) :
             c = PLcurve (2* r *( torch.rand (2) -0.5) , 2* r *( torch.rand(2) -0.5) , N )
             c.plot()
             print(' Energy before optimization is {} '. format ( curve_energy ( metric ,c.points () ) . item () ) )
