@@ -16,6 +16,8 @@ from copy import deepcopy
 import os
 import math
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+import numpy as np
 
 class GaussianPrior(nn.Module):
     def __init__(self, M):
@@ -255,9 +257,16 @@ class PLcurve :
     def points(self):
         c = torch.concatenate((self.x0, self.params, self.x1), axis=0) #NxD
         return c
-    def plot ( self ) :
-        c = self . points () . detach () . numpy ()
-        plt . plot ( c [: , 0] , c [: , 1]) 
+    def plot (self,state,col_cur):
+        #convert to numpy for plotting
+        c = self.points().detach().numpy()
+        #
+        if(state == 'before'):
+            style = '-'
+        elif(state == 'after'):
+            style = '--o'
+        #plotting the curve
+        plt.plot(c[:,0],c[:,1],style, color=col_cur, markersize=3) 
 
 
 def curve_energy (metric, curve) :
@@ -506,7 +515,10 @@ if __name__ == "__main__":
         print("Print mean test elbo:", mean_elbo)
 
     elif args.mode == "geodesics":
-
+        #getting information from user input (or default values)
+        num_curves =args.num_curves
+        num_points_curve = args.num_t
+        #loading and preparing model
         model = VAE(
             GaussianPrior(M),
             GaussianDecoder(new_decoder()),
@@ -514,49 +526,58 @@ if __name__ == "__main__":
         ).to(device)
         model.load_state_dict(torch.load(args.experiment_folder + "/model.pt"))
         model.eval()
-        #
+        #loading the data
         all_z = []
         all_labels = []
         with torch.no_grad():
             for x, y in mnist_test_loader:
+                #data
                 x = x.to(device)
-                z = model.encoder(x).mean.detach().to('cpu')  # shape: (batch_size, 2)
+                #latent representation
+                z = model.encoder(x).mean.detach().to(device)  # encoding the test data
+                #adding results of current iteration
                 all_z.append(z)
                 all_labels.append(y)
-        #
+        #converting from torch tensors to numpy arrays for easier handling in plotting
         all_z = torch.cat(all_z, dim=0).numpy()      # shape: (num_samples, 2)
         all_labels = torch.cat(all_labels, dim=0).numpy()  # shape: (num_samples,)
-        #
+        #getting the range of latent variables for plotting the metric
         z1_min = all_z[:, 0].min().item()
         z1_max = all_z[:, 0].max().item()
         z2_min = all_z[:, 1].min().item()
         z2_max = all_z[:, 1].max().item()
-        #
+        #start of the plot
         plt.figure(figsize=(8, 8))
-        scatter = plt.scatter(all_z[:, 0], all_z[:, 1], c=all_labels, cmap='tab10', s=5)
-        #plt.colorbar(scatter, ticks=range(10))
+        #plotting the latent representations of the test data, colored by their labels
+        scatter = plt.scatter(all_z[:, 0], all_z[:, 1], c=all_labels, cmap="Reds", s=5)
         plt.xlabel('z1')
         plt.ylabel('z2')
-
-
+        #plotting the pullback metric as a heatmap in the latent space, where the color intensity represents the trace of the metric tensor, which gives an indication of how much the decoder stretches or compresses the latent space at different points
         metric = lambda z: pullback_metric(z, model.decoder)
         plot_metric(metric, torch.linspace(z1_min, z1_max, 100),torch.linspace(z2_min, z2_max, 100))
-        N = 20
-        for _ in range (5):
+        #geodesic curves
+        colors = plt.cm.Dark2(np.linspace(0, 1, num_curves))
+        for i in range (num_curves):
+            #current curve color
+            col_cur = colors[i]
+            #getting random indices
             idx1 = torch.randint(0, all_z.shape[0], (1,))
             idx2 = torch.randint(0, all_z.shape[0], (1,))
+            #getting data points based on the random indices
             z1 = torch.from_numpy(all_z[idx1]).float().squeeze(0)
             z2 = torch.from_numpy(all_z[idx2]).float().squeeze(0)
-            c = PLcurve (z1 , z2 , N )
-            c.plot()
-            print(' Energy before optimization is {} '. format ( curve_energy ( metric ,c.points () ) . item () ) )
-            connecting_geodesic ( metric , c )
-            print ( ' Energy after optimization is {} '. format ( curve_energy ( metric , c.points () ) . item () ) )
-            c.plot()
-
-
-
-
-
+            # plot the selected endpoints
+            plt.scatter([z1[0], z2[0]], [z1[1], z2[1]], color=col_cur, s=30)
+            #creating a curve object to represent the geodesic
+            c = PLcurve (z1 , z2 , num_points_curve)
+            #geodesics before optimization
+            c.plot("before",col_cur)
+            print('Energy before optimization is {} '.format(curve_energy(metric,c.points()).item()))
+            #optimizing the geodesic
+            connecting_geodesic (metric,c)
+            #geodesics after optimization
+            print ('Energy after optimization is {} '.format(curve_energy(metric,c.points()).item()))
+            c.plot("after",col_cur)
+        #saving the plot
         experiments_folder = args.experiment_folder
         plt.savefig(f"{experiments_folder}/pullback_metric_trace.png", dpi=100, bbox_inches='tight')
