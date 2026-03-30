@@ -16,6 +16,8 @@ from copy import deepcopy
 import os
 import math
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+import numpy as np
 
 class GaussianPrior(nn.Module):
     def __init__(self, M):
@@ -205,7 +207,7 @@ def train(model, optimizer, data_loader, epochs, device):
                     f"Stopping training at total epoch {epoch} and current loss: {loss:.1f}"
                 )
                 break
-def pullback_metric(z, decoder):
+def pullback_metric(z, decoder):#it is economic version, i.e. not true pullback metric
     #detach to break gradient from previous computations, clone to create a new tensor, and requires_grad_ to enable gradient computation for z (for later use in autograd)
     z = z.detach().clone().requires_grad_(True) #points in the latent space, shape (N, 2)
     #geting the mean of the decoder at the points z, which will be used to compute the Jacobian
@@ -227,6 +229,23 @@ def pullback_metric(z, decoder):
         metric[i] = jacobian[None, :] @ jacobian[:, None]
     #returning the output
     return metric
+#some version with computing full Jacobian (was too expensvie for my laptop, but it is more correct(at least I think so). So above version is being run )
+#looping through each point in the latent space  
+#    for i in range(num_points):
+#        #selecting the i-th point in the latent space, and enabling gradient computation for it
+#        z_i = z[i:i+1]
+#        z_i = z_i.clone().requires_grad_(True)#cloning to have new copy and enabling grad
+#        #evaluating the decoder at the i-th point to get the mean in the data space, which will be used to compute the Jacobian
+#        mu_i = decoder(z_i).mean
+#        #computing the Jacobian of the decoder at the i-th point
+#        mu_flat = mu_i.reshape(-1)
+#        jacobian = []
+#        for d in range(mu_flat.shape[-1]):
+#            grad_d = torch.autograd.grad(mu_flat[d], z_i, retain_graph=True)[0][0]
+#            jacobian.append(grad_d)
+#        jacobian = torch.stack(jacobian, dim=0) 
+#        #multiplying the Jacobian by its transpose to get the pullback metric at the i-th point
+#        metric[i] = jacobian.T @ jacobian
 
 def plot_metric (metric,rangex,rangey):
     X,Y = torch.meshgrid ((rangex, rangey), indexing='ij')
@@ -236,7 +255,6 @@ def plot_metric (metric,rangex,rangey):
     im = plt.imshow(trG.reshape(X.shape).detach().numpy().T,
                extent=(rangex[0], rangex[-1], rangey[0], rangey[-1]),
                origin="lower")
-    plt.colorbar(im, ticks=range(10))
 class PLcurve :
     def __init__ (self,x0,x1,N) :
         """
@@ -255,31 +273,60 @@ class PLcurve :
     def points(self):
         c = torch.concatenate((self.x0, self.params, self.x1), axis=0) #NxD
         return c
-    def plot ( self ) :
-        c = self . points () . detach () . numpy ()
-        plt . plot ( c [: , 0] , c [: , 1]) 
+    def plot (self,state,col_cur, label=None):
+        #convert to numpy for plotting
+        c = self.points().detach().numpy()
+        #changing information depending when curve is plotted
+        if(state == 'curves before optimization'):
+            style = '-'
+        elif(state == 'curves after optimization'):
+            style = '--o'
+        #plotting the curve
+        plt.plot(c[:,0],c[:,1],style, color=col_cur, markersize=3, label=label) 
 
 
-def curve_energy (metric, curve) :
-
-    G = metric(curve[:-1]) # (N -1) xDxD
-    delta = curve[1:] - curve[:-1] # (N -1) xD
-    tmp = torch.bmm(G, delta.unsqueeze(-1)).squeeze(-1) # (N -1) xD
+def curve_energy (metric, curve):#energy =  Σᵢ Δzᵢᵀ G(zᵢ) Δzᵢ, where zᵢ are the points along the curve, Δzᵢ are the differences between consecutive points, and G(zᵢ) is the pullback metric at point zᵢ.
+    #getting the pullback metrics for the points of the curve
+    metric_points = metric(curve[:-1]) # (N -1) 
+    #getting the differences between consecutive points of the curve (velocity vectors).
+    c1 = curve[1:] # ((N -1),D), 1,2,3,...,N
+    c2 = curve[:-1] # ((N -1),D),  0,1,2,...,N-1
+    delta = c1 - c2 #  Δzᵢ, shape ((N -1),D)
+    #calculating tmp[i] = G(zᵢ) Δzᵢ efficiently.
+    tmp = torch.bmm(metric_points, delta.unsqueeze(-1)).squeeze(-1) # (N -1) xD
+    #calculating this step: Σᵢ Δzᵢ · tmp[i] = Σᵢ Δzᵢᵀ G(zᵢ) Δzᵢ
     energy = torch.sum(delta * tmp)
+    #returning output
     return energy
 
-def connecting_geodesic(metric, curve):
-    opt = optim.Adam([curve.params], lr=0.5)
+def connecting_geodesic_LBFGS(metric, curve, lr=1e-3, max_iter=1000):
+    #setting the optimizer to optimize the parameters of the curve
+    opt = optim.LBFGS([curve.params], lr=lr)
+    #setting the closure function
     def closure():
-        opt.zero_grad()
-        energy = curve_energy(metric, curve.points())
-        energy.backward()
+        opt.zero_grad()#clearing the gradients of the curve parameters before computing the energy and its gradients
+        energy = curve_energy(metric, curve.points())#getting the energy
+        energy.backward()#computing the gradients of the energy with respect to the curve parameters using backpropagation
         return energy
-
-    max_iter = 1000
+    #opti loop
     for iter in range(max_iter):
-        opt.zero_grad()
-        opt.step(closure)
+        opt.step(closure)#opti step
+
+def connecting_geodesic_adam(metric, curve, lr=1e-3, max_iter=1000):
+    #setting the optimizer to optimize the parameters of the curve
+    opt = optim.Adam([curve.params], lr=lr)
+    #opti loop
+    for iter in range(max_iter):
+        opt.zero_grad()#clearing the gradients of the curve parameters before computing the energy and its gradients
+        energy = curve_energy(metric, curve.points())#getting the energy
+        energy.backward()#computing the gradients of the energy with respect to the curve parameters using backpropagation
+        opt.step()#opti step
+
+def connecting_geodesic(opt_cho,metric, curve, lr=1e-3, max_iter=1000):       
+    if(opt_cho == 'LBFGS'):
+        connecting_geodesic_LBFGS(metric, curve, lr, max_iter)
+    elif(opt_cho == 'Adam'):
+        connecting_geodesic_adam(metric, curve, lr, max_iter)
 
 if __name__ == "__main__":
     from torchvision import datasets, transforms
@@ -506,7 +553,10 @@ if __name__ == "__main__":
         print("Print mean test elbo:", mean_elbo)
 
     elif args.mode == "geodesics":
-
+        #getting information from user input (or default values)
+        num_curves =args.num_curves
+        num_points_curve = args.num_t
+        #loading and preparing model
         model = VAE(
             GaussianPrior(M),
             GaussianDecoder(new_decoder()),
@@ -514,49 +564,63 @@ if __name__ == "__main__":
         ).to(device)
         model.load_state_dict(torch.load(args.experiment_folder + "/model.pt"))
         model.eval()
-        #
+        #loading the data
         all_z = []
         all_labels = []
         with torch.no_grad():
             for x, y in mnist_test_loader:
+                #data
                 x = x.to(device)
-                z = model.encoder(x).mean.detach().to('cpu')  # shape: (batch_size, 2)
+                #latent representation
+                z = model.encoder(x).mean.detach().to(device)  # encoding the test data
+                #adding results of current iteration
                 all_z.append(z)
                 all_labels.append(y)
-        #
+        #converting from torch tensors to numpy arrays for easier handling in plotting
         all_z = torch.cat(all_z, dim=0).numpy()      # shape: (num_samples, 2)
         all_labels = torch.cat(all_labels, dim=0).numpy()  # shape: (num_samples,)
-        #
+        #getting the range of latent variables for plotting the metric
         z1_min = all_z[:, 0].min().item()
         z1_max = all_z[:, 0].max().item()
         z2_min = all_z[:, 1].min().item()
         z2_max = all_z[:, 1].max().item()
-        #
+        #start of the plot
         plt.figure(figsize=(8, 8))
-        scatter = plt.scatter(all_z[:, 0], all_z[:, 1], c=all_labels, cmap='tab10', s=5)
-        #plt.colorbar(scatter, ticks=range(10))
+        #plotting the latent representations of the test data, colored by their labels
+        scatter = plt.scatter(all_z[:, 0], all_z[:, 1], c=all_labels, cmap="Grays", s=5)
         plt.xlabel('z1')
         plt.ylabel('z2')
-
-
+        #plotting the pullback metric as a heatmap in the latent space, where the color intensity represents the trace of the metric tensor, which gives an indication of how much the decoder stretches or compresses the latent space at different points
         metric = lambda z: pullback_metric(z, model.decoder)
         plot_metric(metric, torch.linspace(z1_min, z1_max, 100),torch.linspace(z2_min, z2_max, 100))
-        N = 20
-        for _ in range (5):
+        #geodesic curves
+        colors = plt.cm.tab10(np.linspace(0, 1, num_curves))
+        for i in range (num_curves):
+            #current curve color
+            col_cur = colors[i]
+            #getting random indices
             idx1 = torch.randint(0, all_z.shape[0], (1,))
             idx2 = torch.randint(0, all_z.shape[0], (1,))
+            #getting data points based on the random indices
             z1 = torch.from_numpy(all_z[idx1]).float().squeeze(0)
             z2 = torch.from_numpy(all_z[idx2]).float().squeeze(0)
-            c = PLcurve (z1 , z2 , N )
-            c.plot()
-            print(' Energy before optimization is {} '. format ( curve_energy ( metric ,c.points () ) . item () ) )
-            connecting_geodesic ( metric , c )
-            print ( ' Energy after optimization is {} '. format ( curve_energy ( metric , c.points () ) . item () ) )
-            c.plot()
-
-
-
-
-
+            # plot the selected endpoints
+            plt.scatter([z1[0], z2[0]], [z1[1], z2[1]], color=col_cur, s=30)
+            #creating a curve object to represent the geodesic
+            c = PLcurve (z1 , z2 , num_points_curve)
+            #geodesics before optimization
+            label = 'curves before optimization' if i == 0 else None
+            c.plot("curves before optimization",col_cur, label=label)
+            print('Energy before optimization is {} '.format(curve_energy(metric,c.points()).item()))
+            #optimizing the geodesic
+            connecting_geodesic ('Adam',metric,c)
+            #geodesics after optimization
+            label = 'curves after optimization' if i == 0 else None
+            print ('Energy after optimization is {} '.format(curve_energy(metric,c.points()).item()))
+            c.plot("curves after optimization",col_cur,label=label)
+            #adding some desriptions (finishing touches for the plot)
+            plt.legend()
+            plt.title('Geodesics in the latent space')
+        #saving the plot
         experiments_folder = args.experiment_folder
         plt.savefig(f"{experiments_folder}/pullback_metric_trace.png", dpi=100, bbox_inches='tight')
