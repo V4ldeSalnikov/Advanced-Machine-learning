@@ -9,9 +9,43 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 
-device = 'cpu'
+def resolve_device(requested_device):
+    xpu_backend = getattr(torch, 'xpu', None)
+    xpu_available = xpu_backend is not None and torch.xpu.is_available()
+    mps_backend = getattr(torch.backends, 'mps', None)
+    mps_available = mps_backend is not None and mps_backend.is_available()
 
-dataset = TUDataset(root='./data/', name='MUTAG').to(device)
+    if requested_device == 'auto':
+        if torch.cuda.is_available():
+            return torch.device('cuda')
+        if xpu_available:
+            return torch.device('xpu')
+        if mps_available:
+            return torch.device('mps')
+        return torch.device('cpu')
+
+    if requested_device == 'cuda':
+        if not torch.cuda.is_available():
+            raise ValueError('CUDA was requested but is not available.')
+        return torch.device('cuda')
+
+    if requested_device == 'xpu':
+        if not xpu_available:
+            raise ValueError('XPU was requested but is not available.')
+        return torch.device('xpu')
+
+    if requested_device == 'mps':
+        if not mps_available:
+            raise ValueError('MPS was requested but is not available.')
+        return torch.device('mps')
+
+    if requested_device == 'cpu':
+        return torch.device('cpu')
+
+    raise ValueError(f'Unsupported device: {requested_device}')
+
+
+dataset = TUDataset(root='./data/', name='MUTAG')
 node_feature_dim = 7
 
 # decoder out size will depend on the largest graph in the dataset
@@ -165,7 +199,7 @@ class GraphVAE(nn.Module):
     def sample(self, N_sizes): # generate one graph per entry in N_sizes; return: list of (N, N) adjacency tensors
 
         n = len(N_sizes)
-        z = self.prior().sample(torch.Size([n]))      
+        z = self.prior().sample(torch.Size([n])).to(self.prior.mean.device)
         logits = self.decoder.decoder_net(z)          
         probs = torch.sigmoid(logits)
 
@@ -221,16 +255,19 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample'], help='what to do when running the script (default: %(default)s)')
+    parser.add_argument('--device', type=str, default='auto', choices=['auto', 'cpu', 'cuda', 'xpu', 'mps'], help='compute device (default: %(default)s)')
     parser.add_argument('--latent-dim', type=int, default=32, metavar='N', help='latent space dimension (default: %(default)s)')
     parser.add_argument('--rounds', type=int, default=3, metavar='N', help='message passing rounds (default: %(default)s)')
     parser.add_argument('--epochs', type=int, default=300, metavar='N', help='training epochs (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N', help='training batch size (default: %(default)s)')
     parser.add_argument('--model', type=str, default='src/MiniProject3/smodelGNN.pt', help='file to save/load model (default: %(default)s)')
     args = parser.parse_args()
+    device = resolve_device(args.device)
 
     print('# Options')
     for key, value in sorted(vars(args).items()):
         print(f'  {key} = {value}')
+    print(f'  resolved_device = {device}')
 
     torch.manual_seed(42)
 
